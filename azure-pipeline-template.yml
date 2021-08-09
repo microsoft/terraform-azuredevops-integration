@@ -1,0 +1,155 @@
+parameters:
+- name: environment
+  type: string
+  default: 'sit'
+- name: location
+  type: string
+  default: 'westus2'
+- name: workingDirectory
+  type: string
+- name: backendAzureRmResourceGroupName
+  type: string
+- name: backendAzureRmStorageAccountName
+  type: string
+- name: backendAzureRmContainerName
+  type: string
+- name: backendAzureRmKey
+  type: string
+- name: keyVaultName
+  type: string
+  default: ''
+- name: keyVaultRg
+  type: string
+  default: ''
+- name: storageSecretKey
+  type: string
+- name: jsonfileName
+  type: string
+- name: isCommonResourceDeployment
+  type: string
+  default: 'true'
+- name: aadGroupId
+  type: string
+  default: ''
+
+steps:
+- ${{ each parameter in parameters }}:
+  - script: echo '${{ parameter.Key }} -> ${{ parameter.Value }}'
+
+- task: Bash@3
+  displayName: 'Download and Unzip Terraform'
+  inputs:
+    targetType: 'inline'
+    workingDirectory:  '$(Pipeline.Workspace)/${{ parameters.workingDirectory }}'
+    script: |
+      # env | sort
+      
+      echo "*************************************************************"
+      echo "*                   Downloading Terraform                   *"
+      echo "*************************************************************"
+      sudo apt-get install unzip
+      wget https://releases.hashicorp.com/terraform/0.15.0/terraform_0.15.0_linux_amd64.zip
+      unzip terraform_0.15.0_linux_amd64.zip
+      sudo mv terraform /usr/local/bin/
+      rm -f terraform_0.15.0_linux_amd64.zip
+      terraform --version
+
+- task: AzureCLI@2
+  displayName: 'Get storage key value from key vault'
+  inputs:
+    azureSubscription: terraform-int
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      skValue=$(az keyvault secret show --vault-name ${{ parameters.keyVaultName }} --name ${{ parameters.storageSecretKey }} --query value --output tsv)
+      echo '##vso[task.setvariable variable=storageKeyValue]'$skValue
+
+- task: Bash@3
+  displayName: 'Terraform Init'
+  inputs:
+    targetType: 'inline'
+    workingDirectory:  '$(Pipeline.Workspace)/${{ parameters.workingDirectory }}'
+    script: |
+      echo "*************************************************************"
+      echo "*                     Terraform Init                        *"
+      echo "*************************************************************"
+     
+      terraform init -reconfigure\
+        -backend-config="resource_group_name=${{ parameters.backendAzureRmResourceGroupName }}" \
+        -backend-config="storage_account_name=${{ parameters.backendAzureRmStorageAccountName }}" \
+        -backend-config="container_name=${{ parameters.backendAzureRmContainerName }}" \
+        -backend-config="key=${{ parameters.backendAzureRmKey }}" \
+        -backend-config="access_key=$(storageKeyValue)"
+
+- task: AzureCLI@2
+  displayName: 'Terraform Plan'
+  inputs:
+    workingDirectory:  '$(Pipeline.Workspace)/${{ parameters.workingDirectory }}'
+    azureSubscription: terraform-int
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: |
+      echo "*************************************************************"
+      echo "*                   Terraform Plan                          *"
+      echo "*************************************************************"
+
+      subscriptionId=$(az account show --query id --output tsv)
+      echo ${{ parameters.isCommonResourceDeployment }}
+
+      if [ ${{ parameters.isCommonResourceDeployment }} = 'true' ]; then
+        echo 'Common Resource Deployment'
+        terraform plan -var environment=${{ parameters.environment }} -var client_id=$servicePrincipalId -var client_secret=$servicePrincipalKey -var tenant_id=$tenantId -var subscription_id=$subscriptionId -out tf.plan
+      else
+        echo 'K8s Deployment'
+        echo ${{ parameters.environment }}
+        echo ${{ parameters.location }}
+
+        ACR_ID=$(cat $(Pipeline.Workspace)/${{ parameters.environment }}-variables/acrId.variable)
+        echo $ACR_ID
+        LOG_ANALYTICS_WORKSPACE_ID=$(cat $(Pipeline.Workspace)/${{ parameters.environment }}-variables/logAnalyticsWorkspaceId.variable)
+        echo $LOG_ANALYTICS_WORKSPACE_ID
+        RANDOM_ID_SUFFIX_DESC=$(cat $(Pipeline.Workspace)/${{ parameters.environment }}-variables/randomIdSuffixDesc.variable)
+        echo $RANDOM_ID_SUFFIX_DESC
+        
+        terraform plan -var environment=${{ parameters.environment }} -var aks_location=${{ parameters.location }} -var acr_id=$ACR_ID -var log_analytics_workspace_id=$LOG_ANALYTICS_WORKSPACE_ID -var random_id_suffix_dec=$RANDOM_ID_SUFFIX_DESC -var keyvault_name=${{ parameters.keyVaultName }} -var keyvault_rg=${{ parameters.keyVaultRg }} -var aadgroup_id=${{ parameters.aadGroupId }} -var client_id=$servicePrincipalId -var client_secret=$servicePrincipalKey -var tenant_id=$tenantId -var subscription_id=$subscriptionId -out tf.plan
+      fi
+    addSpnToEnvironment: true
+
+- task: Bash@3
+  displayName: 'Terraform Apply'
+  inputs:
+    workingDirectory:  '$(Pipeline.Workspace)/${{ parameters.workingDirectory }}'
+    targetType: 'inline'
+    script: |
+      echo "*************************************************************"
+      echo "*                   Terraform Apply                         *"
+      echo "*************************************************************"
+      
+      terraform apply tf.plan
+
+- task: Bash@3
+  displayName: 'Terraform Output'
+  name: setOutput
+  inputs:
+    workingDirectory:  '$(Pipeline.Workspace)/${{ parameters.workingDirectory }}'
+    targetType: 'inline'
+    script: |
+      echo "*************************************************************"
+      echo "*                   Terraform Output                         *"
+      echo "*************************************************************"
+      
+      terraform output -json > ${{ parameters.jsonfileName }}
+      cat ${{ parameters.jsonfileName }}
+      
+      if [ ${{ parameters.isCommonResourceDeployment }} = 'true' ]; then
+        mkdir -p $(Pipeline.Workspace)/${{ parameters.environment }}-variables
+
+        ACR_ID=$(cat ${{ parameters.jsonfileName }} | jq '."azure-container-registry-id".value' -r)
+        echo $ACR_ID > $(Pipeline.Workspace)/${{ parameters.environment }}-variables/acrId.variable
+       
+        LOG_ANALYTICS_WORKSPACE_ID=$(cat ${{ parameters.jsonfileName }} | jq '."log-analytics-workspace-id".value' -r)
+        echo $LOG_ANALYTICS_WORKSPACE_ID > $(Pipeline.Workspace)/${{ parameters.environment }}-variables/logAnalyticsWorkspaceId.variable
+
+        RANDOM_ID_SUFFIX_DESC=$(cat ${{ parameters.jsonfileName }} | jq '."random-id-suffix-dec".value' -r)
+        echo $RANDOM_ID_SUFFIX_DESC > $(Pipeline.Workspace)/${{ parameters.environment }}-variables/randomIdSuffixDesc.variable
+      fi

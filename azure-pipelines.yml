@@ -1,0 +1,100 @@
+# Deployment pipeline
+trigger:
+- none
+
+variables:
+  aadGroupId: '8f28175f-4d4c-450e-89ca-501fddd94d5f'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: publish_terraform_artifacts_stage
+  displayName: 'Publish terraform artifacts'
+  jobs:
+  - job: publish_terraform_artifacts_job
+    displayName: Publish terraform artifacts
+    steps:
+    - publish: '$(Build.SourcesDirectory)/terraform-manifests'
+      artifact: terraform-manifests
+
+- stage: sit_deploy_common_infra_resources_stage
+  displayName: Deploy common resources in SIT environment
+  dependsOn: ['publish_terraform_artifacts_stage']
+  jobs:
+  - deployment: sit_deploy_common_infra_resources_job
+    displayName: Deploy common resources in SIT environment
+    environment: 'SIT-INFRA'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: azure-pipeline-template.yml
+            parameters:
+              environment: 'sit'
+              location: 'westus2'
+              workingDirectory: 'terraform-manifests/aks-shared-resources'
+              backendAzureRmResourceGroupName: 'terraform-storage-rg'
+              backendAzureRmStorageAccountName: 'terraformstate12'
+              backendAzureRmContainerName: 'tfstatefiles'
+              backendAzureRmKey: 'terraform.common.tfstate'
+              keyVaultName: 'terraform-integration-1'
+              storageSecretKey: 'terraform-storage-key'
+              jsonfileName: 'common.json'
+              isCommonResourceDeployment: 'true'
+          - publish: $(Pipeline.Workspace)/sit-variables
+            artifact: sit-variables
+
+- stage: sit_deploy_aks_westus2_stage
+  displayName: Deploy AKS in SIT environment and westus2
+  dependsOn: ['sit_deploy_common_infra_resources_stage']
+  jobs:
+  - deployment: sit_deploy_aks_westus2_job
+    displayName: Deploy AKS in SIT environment and westus2
+    environment: 'SIT-INFRA'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: azure-pipeline-template.yml
+            parameters:
+              environment: 'sit'
+              location: 'westus2'
+              workingDirectory: 'terraform-manifests/aks-cluster'
+              backendAzureRmResourceGroupName: 'terraform-storage-rg'
+              backendAzureRmStorageAccountName: 'terraformstate12'
+              backendAzureRmContainerName: 'tfstatefiles'
+              backendAzureRmKey: 'terraform.westus2.tfstate'
+              keyVaultName: 'terraform-integration-1'
+              keyVaultRg: 'terraform-storage-rg'
+              storageSecretKey: 'terraform-storage-key'
+              jsonfileName: 'westus2k8s.json'
+              isCommonResourceDeployment: 'false'
+              aadGroupId: $(aadGroupId)              
+
+- stage: sit_deploy_aks_eastus2_stage
+  displayName: Deploy AKS in SIT environment and eastus2
+  dependsOn: ['sit_deploy_aks_westus2_stage']
+  jobs:
+  - deployment: sit_deploy_aks_eastus2_job
+    displayName: Deploy AKS in SIT environment and eastus2
+    environment: 'SIT-INFRA'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - template: azure-pipeline-template.yml
+            parameters:
+              environment: 'sit'
+              location: 'eastus2'
+              workingDirectory: 'terraform-manifests/aks-cluster'
+              backendAzureRmResourceGroupName: 'terraform-storage-rg'
+              backendAzureRmStorageAccountName: 'terraformstate12'
+              backendAzureRmContainerName: 'tfstatefiles'
+              backendAzureRmKey: 'terraform.eastus2.tfstate'
+              keyVaultName: 'terraform-integration-1'
+              keyVaultRg: 'terraform-storage-rg'
+              storageSecretKey: 'terraform-storage-key'
+              jsonfileName: 'eastus2k8s.json'
+              isCommonResourceDeployment: 'false'
+              aadGroupId: $(aadGroupId)
