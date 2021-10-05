@@ -15,7 +15,7 @@ variable "environment" {
 }
 variable "log_analytics_workspace_name" {
   description = "Log analytics workspace name"
-  default = "telemetry-gb"
+  default = "default-value"
 }
 
 # refer https://azure.microsoft.com/pricing/details/monitor/ for log analytics pricing 
@@ -25,7 +25,7 @@ variable "log_analytics_workspace_sku" {
 
 variable "application_insights_name" {
   description = "Application insights name"
-  default = "app-insights-gb"
+  default = "default-value"
 }
 
 variable "resourcegroup_location" {
@@ -39,12 +39,12 @@ variable "resourcegroup_location" {
 
 variable "acr_prefix" {
   description = "ACR name"
-  default = "acrrm"
+  default = "default-value"
 }
 
 variable "proj_id" {
   description = "Identifier postfix for various resources"
-  default = "gb"
+  default = "default-value"
 }
 
 ##############################################################################################################
