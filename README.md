@@ -76,6 +76,8 @@ terraform apply tf.plan
 - Replace `aadGroupId` in the `azure-pipelines.yml` which is required to integrate Azure Active Directory with Azure Kubernetes Service.
     - ![aadgroup](https://user-images.githubusercontent.com/21299688/128251634-b1ea9e5f-2bf5-4746-b9b1-d606d4044500.PNG)
 
+-  Create a CI/CD pipeline with `azure-pipelines.yml` file. Run this pipeline to create multiple aks clusters as configured in the scripts.
+
 ## Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
