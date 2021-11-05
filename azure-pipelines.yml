@@ -3,7 +3,7 @@ trigger:
 - none
 
 variables:
-  aadGroupId: '8f28175f-4d4c-450e-89ca-501fddd94d5f'
+  aadGroupId: 'groupId'
 
 pool:
   vmImage: ubuntu-latest
