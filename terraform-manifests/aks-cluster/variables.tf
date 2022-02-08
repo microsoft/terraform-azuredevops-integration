@@ -30,7 +30,7 @@ variable aks {
     identity_type   = "SystemAssigned",
     lb_sku          = "Standard",
     network_plugin  = "kubenet"
-    version         = "1.20.7"
+    version         = "1.20.9"
   }
 }
 
