@@ -7,3 +7,6 @@ output "log-analytics-workspace-id" {
 output "azure-container-registry-id"{
   value = azurerm_container_registry.acr.id
 }
+output "random-id-suffix-dec"{
+  value = random_id.random_suffix.dec
+}
